@@ -32,9 +32,10 @@ ResourceHandler.prototype.getResource = function(req, outgoingResponse, next) {
 
 	var that = this;
 	var uriToGet;
+	var resource = req.HlsMetadata.resource;
 	
 	//Determine if we are dealing with a Media Playlist or a Media Segment
-	if (req.url == "/") {
+	if (resource == "") {
 		//We are getting a playlist so we just have to take the uri we already know
 		uriToGet = this.streamRegistry[req.HlsMetadata.streamId].uri;
 		req.HlsMetadata.isMediaPlaylist = true;
@@ -45,11 +46,12 @@ ResourceHandler.prototype.getResource = function(req, outgoingResponse, next) {
 		});
 	} else {
 		//We are getting a Media Segment. Determine if its uri is relative or absolute
-		if (req.url.search(/:\/\//) < 0) {
+		if (resource.search(/:\/\//) < 0) {
 			//We have relative file url so we must concatenate it with the baseUrl of the remote host of our stream
-			uriToGet = this.streamRegistry[req.HlsMetadata.streamId].uri.substr(0, this.streamRegistry[req.HlsMetadata.streamId].uri.lastIndexOf("/")) + "/" + req.url;
-		} 
-		//Nothing to do in case of absolute, we leave the uri as is.
+			uriToGet = this.streamRegistry[req.HlsMetadata.streamId].uri.substr(0, this.streamRegistry[req.HlsMetadata.streamId].uri.lastIndexOf("/")) + "/" + resource;
+		} else {
+			uriToGet = resource; //Nothing to do in case of absolute, we leave the uri as is.
+		}
 		
 		req.HlsMetadata.isMediaPlaylist = false;
 		req.HlsMetadata.isMediaSegment = true;
@@ -58,11 +60,14 @@ ResourceHandler.prototype.getResource = function(req, outgoingResponse, next) {
 			that.getMediaSegment(req, outgoingResponse, incomingResponse, next);
 		});
 	}
+	
+	//console.log("ResourceHandler: URI to get: " + uriToGet);
 }
 
 ResourceHandler.prototype.getMediaPlaylist = function(req, outgoingResponse, incomingResponse, next) {
 	var fileContent = "";
 	var currentLine = "";
+	var lines = new Array();
 
 	incomingResponse.setEncoding("utf8");
 	outgoingResponse.setHeader("Content-Type", "application/vnd.apple.mpegurl");
@@ -78,16 +83,16 @@ ResourceHandler.prototype.getMediaPlaylist = function(req, outgoingResponse, inc
 				if (currentLine[0] != "#") {
 					currentLine = req.HlsMetadata.streamId + "/" + currentLine; //Modify the URL to the MediaSegment so we can intercept the requests
 				}
-				fileContent += currentLine;
-				fileContent += "\n"
+				lines.push(currentLine);
 				currentLine = "";
 			}
 		}
 		
 	}).on('end', function() {
-		fileContent += currentLine;
+		lines.push(currentLine);
 		outgoingResponse.setHeader("Connection" , "Keep-Alive");
-		outgoingResponse.send(200, fileContent);
+		req.HlsMetadata.data = lines;
+		next();
 		
 	}).on('error', function() {
 		console.log("Error while fetching: " + uriToGet );
@@ -96,24 +101,27 @@ ResourceHandler.prototype.getMediaPlaylist = function(req, outgoingResponse, inc
 }
 
 ResourceHandler.prototype.getMediaSegment = function(req, outgoingResponse, incomingResponse, next) {
-	var fileContent = "";
+	
 	var currentLine = "";
-
+	var bufferList = new Array();
+	var totalBufferLength = 0;
 	
 	//Use the same headers from the request to the real server, but remove ETAG do prevent caching
-	for (var header in subRes.headers) {
+	for (var header in incomingResponse.headers) {
 		if (header.toUpperCase() != "ETAG") {
-			outgoingResponse.setHeader(header, subRes.headers[header]);
-			//console.log("ResourceHandler: "header + ": " + subRes.headers[header]);
+			outgoingResponse.setHeader(header, incomingResponse.headers[header]);
+			//console.log("ResourceHandler: "header + ": " + incomingResponse.headers[header]);
 		}	
 	}
 	outgoingResponse.setHeader("Cache-Control", "no-cache");
 	
-	subRes.on('data', function(chunk) {
-		outgoingResponse.write(chunk); //Just write the data out directly to the client
+	incomingResponse.on('data', function(chunk) {
+		bufferList.push(chunk);
+		totalBufferLength += chunk.length;
 		
 	}).on('end', function() {
-		outgoingResponse.end();
+		req.HlsMetadata.data = Buffer.concat(bufferList, totalBufferLength);
+		next();
 		
 	}).on('error', function() {
 		console.log("Error while fetching: " + uriToGet );

@@ -41,20 +41,21 @@ Router.prototype.routeRequest = function(req, res, next) {
 	if (tokens.length == 2) {
 		//We are getting the sub stream playlist, not a .ts
 		metadata.streamId = tokens[1].split(".")[0];
-		req.url = "/"; // No resource was requested because this is a media playlist request
+		metadata.resource = ""; // No resource was requested because this is a media playlist request
 	} else {
 		//Getting a Media Segment
 		metadata.streamId = tokens[1];
 		
 		var resourceUri = "";
 		//Concatenate all the rest of the tokens together to form the complete resource uri
-		for (var i=2; i<tokens.length-1; ++i) {
+		for (var i=2; i<tokens.length; ++i) {
 			resourceUri += tokens[i];
-			resourceUri += "/" //Reinsert the / that were taken out during the split
+			if (i < tokens.length - 1) resourceUri += "/" //Reinsert the / that were taken out during the split
 		}
-		
-		req.url = "/" + resourceUri;
+		metadata.resource = resourceUri;
 	}
+	
+	//console.log("Router: routed resource: " + metadata.resource);
 	
 	if (typeof this.streamRegistry[metadata.streamId] === 'undefined') {
 		console.log("router: attempting to access non existing stream: " + metadata.streamId);

@@ -13,12 +13,19 @@ function Encrypter(expressApp, streamRegistry) {
 	//Core objects
 	this.app = expressApp;
 	this.streamRegistry = streamRegistry;
+	
+	//HTTP streams stack
+	this.app.use("/streams", function(req, res, next) {
+		that.applyEncryption(req, res, next);
+	});
 }
 
 Encrypter.prototype.updateSocket = function(socket) {
 	var that = this;
 	this.socket = socket;
-	
-	//Event hookups
-	
+}
+
+Encrypter.prototype.applyEncryption = function(req, res, next) {
+	console.log("Encrypter: checking if encryption is necessary");
+	next();
 }
