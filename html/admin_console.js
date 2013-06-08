@@ -1,4 +1,4 @@
-var socket = io.connect('http://172.20.8.182');
+var socket = io.connect('http://' + window.location.host);
 
 socket.on('updateStreamStatus', function(data) {
 	updateStreamStatus(data.id, data.status);
@@ -75,5 +75,7 @@ function updateStreamList(streams) {
 		$stopButton.click(function() {
 			stopStream($(this).parent().attr("id"));
 		});
+		
+		socket.emit('getLoadedMasterUri');
 	}
 }
