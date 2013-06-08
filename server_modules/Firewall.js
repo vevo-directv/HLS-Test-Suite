@@ -13,6 +13,11 @@ function Firewall(expressApp, streamRegistry) {
 	//Core objects
 	this.app = expressApp;
 	this.streamRegistry = streamRegistry;
+	
+	//HTTP middleware
+	this.app.use('/streams', function(req, res, next) {
+		that.enforceAccessRules(req, res, next);
+	});
 }
 
 Firewall.prototype.updateSocket = function(socket) {
@@ -29,3 +34,12 @@ Firewall.prototype.updateSocket = function(socket) {
 		that.streamRegistry[streamId].status = false;
 	});
 } 
+
+Firewall.prototype.enforceAccessRules = function(req, res, next) {
+	if (!this.streamRegistry[req.HlsMetadata.streamId].status) {
+		console.log("Firewall: attempting to access a disabled stream: " + req.HlsMetadata.streamId);
+		res.send(404, "Not found");
+	} else {
+		next();
+	}
+}

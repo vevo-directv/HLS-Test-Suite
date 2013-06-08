@@ -27,4 +27,4 @@ Informer.prototype.updateSocket = function(socket) {
 		console.log("Emitting stream list");
 		that.socket.emit('updateStreamList', that.streamRegistry);
 	});
-} 
+}
