@@ -80,16 +80,15 @@ ResourceHandler.prototype.getMediaPlaylist = function(req, outgoingResponse, inc
 			if (chunk[i].search(/[^\r\n]/) >= 0) {
 				currentLine += chunk[i];
 			} else if (chunk[i].search(/$/) >= 0 && currentLine.length != 0) {
-				if (currentLine[0] != "#") {
-					currentLine = req.HlsMetadata.streamId + "/" + currentLine; //Modify the URL to the MediaSegment so we can intercept the requests
-				}
 				lines.push(currentLine);
 				currentLine = "";
 			}
 		}
 		
 	}).on('end', function() {
-		lines.push(currentLine);
+		if (currentLine.length > 0) {
+			lines.push(currentLine);
+		}
 		outgoingResponse.setHeader("Connection" , "Keep-Alive");
 		req.HlsMetadata.data = lines;
 		next();

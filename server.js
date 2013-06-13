@@ -25,12 +25,9 @@ var modules = [
 	require('./server_modules/Router.js').start(app, streamRegistry),
 	require('./server_modules/Firewall.js').start(app, streamRegistry),
 	require('./server_modules/ResourceHandler.js').start(app, streamRegistry),
-	
-	//Additional middleware layers. Order here does not matter, as long as they are below Router, Firewall, and ResourceHandler
-	require('./server_modules/Encrypter.js').start(app, streamRegistry),
 	require('./server_modules/ByteRanger.js').start(app, streamRegistry),
-	
-	//Must be the last module
+	require('./server_modules/Encrypter.js').start(app, streamRegistry),
+	require('./server_modules/ResourceProxy.js').start(app, streamRegistry),
 	require('./server_modules/Transmitter.js').start(app, streamRegistry)
 ];
 

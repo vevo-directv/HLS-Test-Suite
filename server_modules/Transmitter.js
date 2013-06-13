@@ -39,10 +39,11 @@ Transmitter.prototype.transmit = function(req, res, next) {
 Transmitter.prototype.transmitMediaPlaylist = function(req, res) {
 	var fileContent = "";
 	var lines = req.HlsMetadata.data;
-	for (var i=0; i<lines.length; ++i) {
+	for (var i=0; i<lines.length-1; ++i) {
 		fileContent += lines[i];
 		fileContent += '\n';
 	}
+	fileContent += lines[lines.length-1];
 	res.send(200, fileContent);
 }
 
