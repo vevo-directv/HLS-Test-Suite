@@ -21,6 +21,11 @@ function Router(expressApp, streamRegistry) {
 	this.app.use("/streams", function(req, res, next) {
 		that.routeRequest(req, res, next);
 	});
+	
+	//HTTP keys stack
+	this.app.use("/keys", function(req, res, next) {
+		that.routeRequest(req, res, next);
+	});
 }
 
 Router.prototype.updateSocket = function(socket) {

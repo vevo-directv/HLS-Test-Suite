@@ -14,8 +14,13 @@ function Firewall(expressApp, streamRegistry) {
 	this.app = expressApp;
 	this.streamRegistry = streamRegistry;
 	
-	//HTTP middleware
+	//HTTP streams stack
 	this.app.use('/streams', function(req, res, next) {
+		that.enforceAccessRules(req, res, next);
+	});
+	
+	//HTTP keys stack
+	this.app.use('/keys', function(req, res, next) {
 		that.enforceAccessRules(req, res, next);
 	});
 }

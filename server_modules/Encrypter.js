@@ -22,9 +22,9 @@ function Encrypter(expressApp, streamRegistry) {
 		that.applyEncryption(req, res, next);
 	});
 	
-	//HTTP keys mappings
-	this.app.use("/keys/static", function(req, res) {
-		that.httpStaticKeyRequest(req, res);
+	//HTTP keys stack
+	this.app.use("/keys", function(req, res, next) {
+		that.httpKeyRequest(req, res, next);
 	});
 }
 
@@ -69,7 +69,7 @@ Encrypter.prototype.applyEncryption = function(req, res, next) {
 		
 		} else {
 			
-			
+			this.applyEncryptionToSegment(req, res, next);
 		
 		}
 	}
@@ -105,7 +105,7 @@ Encrypter.prototype.getKeyIVForMediaSequence = function(mediaSequenceNumber, seg
 	var streamObject = this.streamRegistry[req.HlsMetadata.streamId];
 	var selectedKeyIV;
 	
-	fs.appendFileSync(__dirname + "/log.txt", "Getting key for MSN: " + mediaSequenceNumber +"\n");
+	//fs.appendFileSync(__dirname + "/log.txt", "Getting key for MSN: " + mediaSequenceNumber +"\n");
 	
 	//When we are using a static key, we always associate it with the first media sequence number
 	var mappedSequenceNumber = streamObject.firstMediaSequenceNumber;
@@ -115,19 +115,19 @@ Encrypter.prototype.getKeyIVForMediaSequence = function(mediaSequenceNumber, seg
 		mappedSequenceNumber = parseInt((mediaSequenceNumber - streamObject.firstMediaSequenceNumber) / streamObject.keyWindow) * streamObject.keyWindow + streamObject.firstMediaSequenceNumber;
 	}
 	
-	fs.appendFileSync(__dirname + "/log.txt", "\tMapped MSN: " + mappedSequenceNumber +"\n");
+	//fs.appendFileSync(__dirname + "/log.txt", "\tMapped MSN: " + mappedSequenceNumber +"\n");
 	
 	if (mappedSequenceNumber == mediaSequenceNumber || forceFetch) {
 		//forceFetch allows getting the key even though we are not on a keyWindow boundary
 		//this is necessary in case the first media segment does not fall onto a keyWindow boundary
-		fs.appendFileSync(__dirname + "/log.txt", "\tMSN Match! Getting key!\n");
+		//fs.appendFileSync(__dirname + "/log.txt", "\tMSN Match! Getting key!\n");
 		selectedKeyIV = this.getOrCreateKeyIVByMediaSequenceNumber(mappedSequenceNumber, req);
 	} else {
 		selectedKeyIV = null;
 	}
 	
 	//Map the segment uri to the key (to fetch the correct key when evaluating segments)
-	this.mapSegmentUriToKeyIV(segmentUri, selectedKeyIV, req);
+	this.mapSegmentUriToKeyIV(segmentUri, streamObject.keyIVMediaSequenceDict[mappedSequenceNumber], req);
 	
 	return selectedKeyIV;
 }
@@ -171,13 +171,16 @@ Encrypter.prototype.mapSegmentUriToKeyIV = function(segmentUri, keyIV, req) {
 	}
 	
 	streamObject.segmentUriKeyIVMap[segmentUri] = keyIV;
+	//fs.appendFileSync(__dirname + "/log.txt", "\tMapped URI: " + segmentUri +"\n");
 }
 
-Encrypter.prototype.applyEncryptionToMediaSegment = function (req, res, next) {
+Encrypter.prototype.applyEncryptionToSegment = function (req, res, next) {
 	//We are getting a media segment. Encrypt it if we have a key.
-	var keyIV = null;//this.getKeyIVForSegmentResource(req.);
+	var keyIV = this.streamRegistry[req.HlsMetadata.streamId].segmentUriKeyIVMap[req.HlsMetadata.resource];
+	console.log("Encrypter: Getting key for resource " + req.HlsMetadata.resource);
 	if (keyIV != null) {
-	
+		console.log("Encrypter: using key " + keyIV.key.toString("hex"));
+		console.log("Encrypter: using iv " + keyIV.iv.toString("hex"));
 		var cipher = crypto.createCipheriv('aes-128-cbc', keyIV.key, keyIV.iv);
 		cipher.setAutoPadding(false); //Let's do manual padding with PKCS7
 		
@@ -191,22 +194,28 @@ Encrypter.prototype.applyEncryptionToMediaSegment = function (req, res, next) {
 		
 		req.HlsMetadata.data = cipher.update(srcBuffer, "binary");
 		
-		//update content-length header because th eencrypted packet is a bit bigger
+		//update content-length header because the encrypted packet is a bit bigger
 		res.setHeader("content-length", req.HlsMetadata.data.length);
+	} else {
+		console.log("ENCRYPTER: Could not find key for segment!");
 	}
 }
 
-Encrypter.prototype.httpStaticKeyRequest = function(req, res) {
-	console.log("Requesting a key: " + req.url);
-	var streamId = req.url.substring(1, req.url.lastIndexOf("."));
-	if (typeof this.streamRegistry[streamId] !== 'undefined' && typeof this.streamRegistry[streamId].currentStaticKeyIV !== 'undefined') {
+Encrypter.prototype.httpKeyRequest = function(req, res, next) {
+	console.log("Requesting a key: " + req.HlsMetadata.resource);
+	
+	var keyFileRequested = req.HlsMetadata.resource;
+	var mediaSequenceNumber = parseInt(keyFileRequested.substr(0, keyFileRequested.lastIndexOf(".")));
+	
+	var streamObject = this.streamRegistry[req.HlsMetadata.streamId];
+	if (typeof streamObject.keyIVMediaSequenceDict[mediaSequenceNumber] === 'undefined') {
+		res.send(404, "Not found");
+	} else {
 		res.setHeader("Content-Type", "application/binary");
 		res.setHeader("Cache-Control", "no-cache");
 		res.statusCode = 200;
-		res.write(this.streamRegistry[streamId].currentStaticKeyIV.key, "binary");
+		res.write(streamObject.keyIVMediaSequenceDict[mediaSequenceNumber].key, "binary");
 		res.end();
-	} else {
-		res.send(404, "Not found");
 	}
 }
 
@@ -218,7 +227,7 @@ Encrypter.prototype.findMediaSequenceNumber = function(req) {
 		
 		var match = regex.exec(lines[i]);
 		if (match != null) {
-			fs.appendFileSync(__dirname + "/log.txt", "First MSN: " + match[1] +"\n");
+			//fs.appendFileSync(__dirname + "/log.txt", "First MSN: " + match[1] +"\n");
 			return parseInt(match[1]);
 		}
 	}
