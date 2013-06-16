@@ -1,0 +1,27 @@
+{
+  "name": "HLS-Proxy",
+  "version": "0.0.1",
+  "author": "Kevin Cadieux <kcadieux@gmail.com>",
+  "description": "An HLS server wrapper that adds features to an existing HLS stream",
+  "contributors": [ 
+    {
+      "name": "Kevin Cadieux",
+      "email": "kcadieux@gmail.com"
+    } 
+  ],
+  "bin": {
+    "hls-proxy": "./server.js"
+  },
+  "scripts": {
+    "start": "node ./server.js"
+  },
+  "dependencies" : {
+    "express"  :  "3.2.6",
+    "socket.io":  "0.9.14"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=0.10"
+  }
+}
+
