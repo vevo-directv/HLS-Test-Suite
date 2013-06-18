@@ -16,6 +16,7 @@ function ByteRanger(expressApp, streamRegistry) {
 	
 	//HTTP streams stack
 	this.app.use("/streams", function(req, res, next) {
+		that.streamObject = that.streamRegistry[req.HlsMetadata.streamId];
 		that.applyByteRange(req, res, next);
 	});
 }
@@ -26,6 +27,91 @@ ByteRanger.prototype.updateSocket = function(socket) {
 }
 
 ByteRanger.prototype.applyByteRange = function(req, res, next) {
-	console.log("ByteRanger: checking if byte range is activated");
+	
+	this.streamObject.isByteRangeActivated = true;
+	
+	//There is only processing to be done for the media playlist. The segment always stays the same
+	if (this.streamObject.isByteRangeActivated && req.HlsMetadata.isMediaPlaylist) {
+	
+		var lines = req.HlsMetadata.data;
+		var MSN = this.findMediaSequenceNumber(req);
+		var regex = /^#EXTINF:([0-9.]+),/;
+		
+		console.log("Byte ranger: first MSN = " + firstMSN);
+	
+		for (var i=0; i<lines.length; ++i) {
+		
+			if (lines[i].search(/#EXTINF/ >= 0)) {
+				this.streamObject.byteRangeSegmentMap[lines[i+1]] = MSN;
+				
+				
+				//Get duration of segment
+				var segmentUriLine = lines[i+1];
+				var segmentDuration;
+				var match = regex.exec(lines[i]);
+				if (match != null) {
+					 segmentDuration = parseFloat(match[1]);
+				}
+				
+				var newDuration = parseInt(Math.ceil(segmentDuration / 2));
+				var newExtInfLine = lines[i].replace(match[1], newDuration.toString());
+				lines[i] = newExtInfLine;
+				
+				//Add the other half of the range
+				i += 2;
+				lines.splice(i++,0, newExtInfLine);
+				lines.splice(i++,0, segmentUriLine);
+			}
+		
+		}
+	}
+	
 	next();
+}
+
+ByteRanger.prototype.findMediaSequenceNumber = function(req) {
+	var lines = req.HlsMetadata.data;
+	
+	var firstSegmentUri = this.findFirstSegment(req);
+	
+	//Create a map that will serve to store the association between
+	//the segment Uri's and their new media sequence number
+	if (typeof this.streamObject.byteRangeSegmentMap === 'undefined') {
+		this.streamObject.byteRangeSegmentMap = { };
+	}
+	
+	if (typeof this.streamObject.byteRangeSegmentMap[firstSegmentUri] === 'undefined') {
+		//We are just starting to apply byte ranges so take the first media sequence number
+		//as indicated by the media playlist
+		var regex = /^#EXT-X-MEDIA-SEQUENCE:([0-9]+)/g;
+		for (var i=0; i<lines.length; ++i) {
+			
+			var match = regex.exec(lines[i]);
+			if (match != null) {
+				return parseInt(match[1]);
+			}
+		}
+	
+		return 0;
+	} else {
+		//Otherwise just forward the modified media sequence number associated to the segment uri
+		return this.streamObject.byteRangeSegmentMap[firstSegmentUri];
+	}
+}
+
+ByteRanger.prototype.findFirstSegment = function(req) {
+
+	var lines = req.HlsMetadata.data;
+	
+	for (var i=0; i<lines.length; ++i) {
+		if (lines[i].search(/#EXTINF/) >= 0) {
+			for(i = i+1;i<lines.length; ++i) {
+				if (lines[i].search(/#EXT/) < 0) {
+					return lines[i];
+				}
+			}
+		}
+	}
+
+	return null;
 }
