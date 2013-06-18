@@ -28,7 +28,7 @@ ByteRanger.prototype.updateSocket = function(socket) {
 
 ByteRanger.prototype.applyByteRange = function(req, res, next) {
 	
-	this.streamObject.isByteRangeActivated = true;
+	this.streamObject.isByteRangeActivated = false;
 	
 	//There is only processing to be done for the media playlist. The segment always stays the same
 	if (this.streamObject.isByteRangeActivated && req.HlsMetadata.isMediaPlaylist) {
@@ -37,30 +37,38 @@ ByteRanger.prototype.applyByteRange = function(req, res, next) {
 		var MSN = this.findMediaSequenceNumber(req);
 		var regex = /^#EXTINF:([0-9.]+),/;
 		
-		console.log("Byte ranger: first MSN = " + firstMSN);
+		console.log("Byte ranger: first MSN = " + MSN);
 	
 		for (var i=0; i<lines.length; ++i) {
 		
-			if (lines[i].search(/#EXTINF/ >= 0)) {
+			if (lines[i].search(/#EXTINF/) >= 0) {
 				this.streamObject.byteRangeSegmentMap[lines[i+1]] = MSN;
 				
 				
 				//Get duration of segment
 				var segmentUriLine = lines[i+1];
 				var segmentDuration;
+				console.log(lines[i]);
 				var match = regex.exec(lines[i]);
 				if (match != null) {
-					 segmentDuration = parseFloat(match[1]);
+					segmentDuration = parseFloat(match[1]);
+					console.log("segment duration: " + segmentDuration);
+					 
+					var newDuration = parseInt(Math.ceil(segmentDuration / 2));
+					var newExtInfLine = lines[i].replace(match[1], newDuration.toString());
+					lines[i] = newExtInfLine;
+					
+					//Compute the length and offset of the ranges
+					//OMFG this can't really be done here... Refactor time!
+					
+					//Insert the byterange tag for the current segment
+					lines.splice(i,0, "#EXT-X-BYTERANGE:");
+			
+					//Add the other half of the range
+					i += 2;
+					lines.splice(i,0, newExtInfLine);
+					lines.splice(i+1,0, segmentUriLine);
 				}
-				
-				var newDuration = parseInt(Math.ceil(segmentDuration / 2));
-				var newExtInfLine = lines[i].replace(match[1], newDuration.toString());
-				lines[i] = newExtInfLine;
-				
-				//Add the other half of the range
-				i += 2;
-				lines.splice(i++,0, newExtInfLine);
-				lines.splice(i++,0, segmentUriLine);
 			}
 		
 		}
