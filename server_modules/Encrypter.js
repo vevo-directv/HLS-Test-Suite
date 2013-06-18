@@ -59,6 +59,7 @@ Encrypter.prototype.applyEncryption = function(req, res, next) {
 	
 	this.streamRegistry[req.HlsMetadata.streamId].isUsingRollingKeys = true;
 	this.streamRegistry[req.HlsMetadata.streamId].keyWindow = 4;
+	this.streamRegistry[req.HlsMetadata.streamId].isGeneratingIV = false;
 	
 	if (this.streamRegistry[req.HlsMetadata.streamId].isUsingRollingKeys ||
 		 this.streamRegistry[req.HlsMetadata.streamId].isUsingStaticKeys) {
@@ -94,7 +95,13 @@ Encrypter.prototype.applyEncryptionToMediaPlaylist = function(req, res, next) {
 		if (lines[i].search(/#EXTINF/) >= 0) {
 			var keyIV = this.getKeyIVForMediaSequence(mediaSequenceNumber, lines[i+1], (mediaSequenceNumber == firstSequenceNumberInThisFetch), req);
 			if (keyIV != null) {
-				lines.splice(i++,0,"#EXT-X-KEY:METHOD=AES-128,URI=\"" + keyIV.uri + "\",IV=0x" + keyIV.iv.toString("hex"));
+				
+				var ivString = "";
+				if (streamObject.isGeneratingIV)
+				{
+					ivString = ",IV=0x" + keyIV.iv.toString("hex")
+				}
+				lines.splice(i++,0,"#EXT-X-KEY:METHOD=AES-128,URI=\"" + keyIV.uri + "\"" + ivString);
 			}
 			++mediaSequenceNumber;
 		}
@@ -127,7 +134,7 @@ Encrypter.prototype.getKeyIVForMediaSequence = function(mediaSequenceNumber, seg
 	}
 	
 	//Map the segment uri to the key (to fetch the correct key when evaluating segments)
-	this.mapSegmentUriToKeyIV(segmentUri, streamObject.keyIVMediaSequenceDict[mappedSequenceNumber], req);
+	this.mapSegmentUriToKeyIVAndMSN(segmentUri, streamObject.keyIVMediaSequenceDict[mappedSequenceNumber], mediaSequenceNumber, req);
 	
 	return selectedKeyIV;
 }
@@ -150,10 +157,20 @@ Encrypter.prototype.getOrCreateKeyIVByMediaSequenceNumber = function(mediaSequen
 
 Encrypter.prototype.createKeyIV = function(mediaSequenceNumber, req) {
 	var streamId = req.HlsMetadata.streamId;
+	var iv = crypto.pseudoRandomBytes(16);
+	
+	/*
+	if (this.streamRegistry[streamId].isGeneratingIV) {
+		iv = crypto.pseudoRandomBytes(16);
+	} else {
+		iv = new Buffer(16);
+		iv.fill(0, 0, 12);
+		iv.writeUInt32BE(mediaSequenceNumber, 12);
+	} */
 	
 	var newKeyIV = {
 		key : crypto.pseudoRandomBytes(16),
-		iv :  crypto.pseudoRandomBytes(16),
+		iv :  iv,
 		uri : "http://" + req.headers.host + "/keys/" + streamId + "/" + mediaSequenceNumber + ".bin",
 	}
 	
@@ -162,25 +179,43 @@ Encrypter.prototype.createKeyIV = function(mediaSequenceNumber, req) {
 	return newKeyIV;
 }
 
-Encrypter.prototype.mapSegmentUriToKeyIV = function(segmentUri, keyIV, req) {
+Encrypter.prototype.mapSegmentUriToKeyIVAndMSN = function(segmentUri, keyIV, mediaSequenceNumber, req) {
 	var streamObject = this.streamRegistry[req.HlsMetadata.streamId];
 	
 	//Create mapping table if it doesn't already exist
-	if (typeof streamObject.segmentUriKeyIVMap === 'undefined') {
-		streamObject.segmentUriKeyIVMap = {};
+	if (typeof streamObject.segmentUriMap === 'undefined') {
+		streamObject.segmentUriMap = {};
 	}
 	
-	streamObject.segmentUriKeyIVMap[segmentUri] = keyIV;
+	streamObject.segmentUriMap[segmentUri] = { keyIV : keyIV, mediaSequenceNumber : mediaSequenceNumber };
 	//fs.appendFileSync(__dirname + "/log.txt", "\tMapped URI: " + segmentUri +"\n");
 }
 
 Encrypter.prototype.applyEncryptionToSegment = function (req, res, next) {
+	var streamObject = this.streamRegistry[req.HlsMetadata.streamId];
+
 	//We are getting a media segment. Encrypt it if we have a key.
-	var keyIV = this.streamRegistry[req.HlsMetadata.streamId].segmentUriKeyIVMap[req.HlsMetadata.resource];
+	var keyIV = streamObject.segmentUriMap[req.HlsMetadata.resource].keyIV;
 	console.log("Encrypter: Getting key for resource " + req.HlsMetadata.resource);
 	if (keyIV != null) {
+	
+		var iv = keyIV.iv;
+	
+		
+		if (streamObject.isGeneratingIV) {
+			iv = keyIV.iv;
+		} else {
+			var msn = streamObject.segmentUriMap[req.HlsMetadata.resource].mediaSequenceNumber;
+			iv = new Buffer(16);
+			iv.fill(0, 0, 12);
+			iv.writeUInt32BE(msn, 12);
+		}
+	
 		console.log("Encrypter: using key " + keyIV.key.toString("hex"));
-		console.log("Encrypter: using iv " + keyIV.iv.toString("hex"));
+		console.log("Encrypter: using iv " + iv.toString("hex"));
+		
+		
+		
 		var cipher = crypto.createCipheriv('aes-128-cbc', keyIV.key, keyIV.iv);
 		cipher.setAutoPadding(false); //Let's do manual padding with PKCS7
 		

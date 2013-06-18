@@ -21,7 +21,7 @@ var modules = [
 	require('./server_modules/Informer.js').start(app, streamRegistry),
 	require('./server_modules/MasterPlaylistHandler.js').start(app, streamRegistry),
 	
-	//The order of these modules MATTERS. It describes the processing order of a /streams request
+	//The order of these modules MATTERS. It describes the processing order of the HTTP requests
 	require('./server_modules/Router.js').start(app, streamRegistry),
 	require('./server_modules/Firewall.js').start(app, streamRegistry),
 	require('./server_modules/ResourceHandler.js').start(app, streamRegistry),
