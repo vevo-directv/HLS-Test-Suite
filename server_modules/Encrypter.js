@@ -55,11 +55,9 @@ Encrypter.prototype.getFragmentRollingKeyIV = function(segment) {
 }
 
 Encrypter.prototype.applyEncryption = function(req, res, next) {
-	//console.log("Encrypter: checking if encryption is necessary");
-	
 	this.streamRegistry[req.HlsMetadata.streamId].isUsingRollingKeys = true;
 	this.streamRegistry[req.HlsMetadata.streamId].keyWindow = 4;
-	this.streamRegistry[req.HlsMetadata.streamId].isGeneratingIV = false;
+	this.streamRegistry[req.HlsMetadata.streamId].isGeneratingIV = true;
 	
 	if (this.streamRegistry[req.HlsMetadata.streamId].isUsingRollingKeys ||
 		 this.streamRegistry[req.HlsMetadata.streamId].isUsingStaticKeys) {
@@ -92,6 +90,7 @@ Encrypter.prototype.applyEncryptionToMediaPlaylist = function(req, res, next) {
 	var i=0;
 	var lines = req.HlsMetadata.data;
 	for (; i<lines.length; ++i) {
+		
 		if (lines[i].search(/#EXTINF/) >= 0) {
 			var keyIV = this.getKeyIVForMediaSequence(mediaSequenceNumber, lines[i+1], (mediaSequenceNumber == firstSequenceNumberInThisFetch), req);
 			if (keyIV != null) {
@@ -99,7 +98,7 @@ Encrypter.prototype.applyEncryptionToMediaPlaylist = function(req, res, next) {
 				var ivString = "";
 				if (streamObject.isGeneratingIV)
 				{
-					ivString = ",IV=0x" + keyIV.iv.toString("hex")
+					ivString = ",IV=0x" + keyIV.iv.toString("hex").toUpperCase();
 				}
 				lines.splice(i++,0,"#EXT-X-KEY:METHOD=AES-128,URI=\"" + keyIV.uri + "\"" + ivString);
 			}
@@ -157,20 +156,10 @@ Encrypter.prototype.getOrCreateKeyIVByMediaSequenceNumber = function(mediaSequen
 
 Encrypter.prototype.createKeyIV = function(mediaSequenceNumber, req) {
 	var streamId = req.HlsMetadata.streamId;
-	var iv = crypto.pseudoRandomBytes(16);
-	
-	/*
-	if (this.streamRegistry[streamId].isGeneratingIV) {
-		iv = crypto.pseudoRandomBytes(16);
-	} else {
-		iv = new Buffer(16);
-		iv.fill(0, 0, 12);
-		iv.writeUInt32BE(mediaSequenceNumber, 12);
-	} */
 	
 	var newKeyIV = {
 		key : crypto.pseudoRandomBytes(16),
-		iv :  iv,
+		iv :  crypto.pseudoRandomBytes(16),
 		uri : "http://" + req.headers.host + "/keys/" + streamId + "/" + mediaSequenceNumber + ".bin",
 	}
 	
@@ -200,11 +189,8 @@ Encrypter.prototype.applyEncryptionToSegment = function (req, res, next) {
 	if (keyIV != null) {
 	
 		var iv = keyIV.iv;
-	
 		
-		if (streamObject.isGeneratingIV) {
-			iv = keyIV.iv;
-		} else {
+		if (!streamObject.isGeneratingIV) {
 			var msn = streamObject.segmentUriMap[req.HlsMetadata.resource].mediaSequenceNumber;
 			iv = new Buffer(16);
 			iv.fill(0, 0, 12);
@@ -216,7 +202,7 @@ Encrypter.prototype.applyEncryptionToSegment = function (req, res, next) {
 		
 		
 		
-		var cipher = crypto.createCipheriv('aes-128-cbc', keyIV.key, keyIV.iv);
+		var cipher = crypto.createCipheriv('aes-128-cbc', keyIV.key, iv);
 		cipher.setAutoPadding(false); //Let's do manual padding with PKCS7
 		
 		//Construct a buffer that is a length multiple of 16

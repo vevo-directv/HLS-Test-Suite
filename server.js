@@ -28,6 +28,7 @@ var modules = [
 	require('./server_modules/ByteRanger.js').start(app, streamRegistry),
 	require('./server_modules/Encrypter.js').start(app, streamRegistry),
 	require('./server_modules/ResourceProxy.js').start(app, streamRegistry),
+	require('./server_modules/VersionChecker.js').start(app, streamRegistry),
 	require('./server_modules/Transmitter.js').start(app, streamRegistry)
 ];
 
